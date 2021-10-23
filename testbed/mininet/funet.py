@@ -27,6 +27,7 @@ def bso():
     link_from = [1,1,1,2,3,3,4,5,6,6,7,7,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
     link_to =   [3,21,23,23,4,6,5,7,7,10,8,9,13,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
 
+    #create links between switches with bandwidth (bw)
     for lf, lt in zip(link_from, link_to):
         if (lf == 1 and lt == 3) or (lf == 1 and lt == 23) or (lf == 1 and lt == 21) or (lf == 21 and lt == 20) or (lf == 20 and lt == 19) or (lf == 3 and lt == 6) or (lf == 6 and lt == 7) or (lf == 9 and lt == 13):
             net.addLink('s%d' % int(lf), 's%d' % int(lt), bw=30)

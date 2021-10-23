@@ -1,6 +1,6 @@
 # This is a part of the program in the article:
 #  "A Reinforcement Learning-Based Solution for Intra-Domain Egress Selection" 
-#  Authors: Duc-Huy LE, Hai Anh TRAN
+#  Authors: Duc-Huy LE, Hai Anh TRAN, Sami SOUIHI
 #  Conference: HPSR2021
 
 # This is a library represent Multi-armed bandit problem with several 
@@ -9,6 +9,7 @@
 import math
 import numpy as np
 
+# MAB superclass
 class MAB(object):
     def __init__(self, actions, action_num):
         self.actions = actions
@@ -27,6 +28,7 @@ class Action(object):
     def __repr__(self):
         return "id:" + str(self.id) + " ChoosenTime:" + str(self.N) + " MeanReward:" + str(self.mean)
     
+# epsilon-greedy class
 class egreedy(MAB):
     def __init__(self, actions, action_num, eps):
         super(egreedy, self).__init__(actions, action_num)
@@ -41,6 +43,7 @@ class egreedy(MAB):
         x = self.actions[j]
         return x
 
+# softmax class
 class softmax(MAB):
     def __init__(self, actions, action_num, tau):
         super(softmax, self).__init__(actions, action_num)
@@ -58,6 +61,7 @@ class softmax(MAB):
                 return self.actions[i]
         return self.actions[-1]
 
+#UCB1 class
 class UCB1(MAB):
     def __init__(self, actions, action_num):
         super(UCB1, self).__init__(actions, action_num)
@@ -68,7 +72,7 @@ class UCB1(MAB):
         choosen = np.argmax(indexs)
         return self.actions[choosen]
 
-
+#SP_UCB2 class
 class SP_UCB2(MAB):
     def __init__(self, actions, action_num, alpha):
         super(SP_UCB2, self).__init__(actions, action_num)

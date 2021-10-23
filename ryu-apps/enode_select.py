@@ -1,6 +1,6 @@
 # This is ryu application used in the article:
 #  "A Reinforcement Learning-Based Solution for Intra-Domain Egress Selection" 
-#  Authors: Duc-Huy LE, Hai Anh TRAN
+#  Authors: Duc-Huy LE, Hai Anh TRAN, Sami SOUIHI
 #  Conference: HPSR2021
 
 # This application periodically choose a new egressnode using one of the mentioned algorithms
@@ -22,52 +22,66 @@ from collections import defaultdict
 
 from mab import *
 
+# Prefix Mac address for of the special MAC packet 
+# using to calculate link delay (theroritically presented in the paper)
 ETH_ADD_PREFIX = 'ff:ff:ff:ff:ff:'
 
-# Manually setup the egressnode set
+# Manually setup the egressnode set,
+# Need to change reponsding to each scenario:
 EGRESS_NODES = [4,6,11,12,14]
 INGRESS_NODE = 1 #default ingress
 
+# Defined IP address for outbound traffic,
+# From IP 11.0.0.1 to 11.0.0.2
 OUTBOUND_SRC_IP = '11.0.0.1'
 OUTBOUND_DST_IP = '11.0.0.2'
+##Note: Ip addresses of the virtual PC in the network is 10.0.0.x by default
 
+#Main app
 class enode_select(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         super(enode_select, self).__init__( *args, **kwargs)
-        self.monitor_thread = hub.spawn(self.monitor)
-        self.selecting_thread = hub.spawn(self.selecting)
+        self.monitor_thread = hub.spawn(self.monitor) # Spawn montior component (line #67)
+        self.selecting_thread = hub.spawn(self.selecting) # Spawn egress selection component (line #76)
 
-        self.datapaths = {}
-        self.switches = []
-        self.adjacency = defaultdict(dict)
-        self.routing_table = defaultdict(dict)
+        #Network toplology information:
+        self.datapaths = {} #List of SDN switches's ID (or DATAPATH) in the network
+        self.switches = [] #List of switch ENTITIES
+        self.adjacency = defaultdict(dict) # self.adjacency[s1][s2] = port of switch s1 that links to switch s2
+        self.routing_table = defaultdict(dict) #self.routing_table[s1][s2] contains switchs in the shortest path from s1 to s2
 
-        self.current_egressnode = 0
+        self.current_egressnode = 0 # denotes current egress node
 
-        self.delay_start_time = defaultdict(dict)
-        self.delay_end_time = defaultdict(dict)
-        self.delay_status = defaultdict(dict)
+        #For delay calculating
+        self.delay_start_time = defaultdict(dict) #sending time of the delay packet
+        self.delay_end_time = defaultdict(dict) # receiving time of the delay packet
+        self.delay_status = defaultdict(dict) # self.delay_status[s1][s2] = 0 - delay calculating ongoing in path s1-s2, 1 - calculating finished 
 
-        self.rx_flow_stats = defaultdict(dict)
-        self.tx_flow_stats = defaultdict(dict)
+        #For loss calculating
+        self.rx_flow_stats = defaultdict(dict) # flow_stats of s1-s2 at the beginning of the calculation
+        self.tx_flow_stats = defaultdict(dict) # flow_stats of s1-s2 at the end of calculation 
 
     # Monitor and update routing table
     def monitor(self):
-        hub.sleep(2)
-        self.calculate_routing_table()
+        hub.sleep(2) #wait for connections
+        self.calculate_routing_table() #calculating routing table
+
+        # Periodically updating the routing table
         while True:
             hub.sleep(60)
             self.calculate_routing_table()
     
     # Main thread, choose egress node using pre-defined algorithm
     def selecting(self):
-        hub.sleep(3)
+        hub.sleep(3) #Wait for connections
         # Import egress nodes into MAB actions
-        action_list = []
+        action_list = [] # list of actions (read more in mab.py)
         for node in EGRESS_NODES:
             action_list.append(Action(node))
+        # Import a MAB algorithm. change SP_UCB2 to any of algorithms defined in mab.py
+        # Read mab.py for details of each algorithm
         mab_model = SP_UCB2(action_list, len(action_list),0.1)
         self.logger.info(mab_model.actions)
         
@@ -77,33 +91,43 @@ class enode_select(app_manager.RyuApp):
             self.change_egress_node(action_list[i].id)
             tx1, rx1 = self.get_path_stats(INGRESS_NODE, enode)
             hub.sleep(3)
+
+            #delay calculating
             delays = []
-            for j in xrange(10):
+            for j in xrange(10): #delay is calculated 10 times in a session
                 delay = self.calculate_link_delay(INGRESS_NODE, enode)
                 if delay != -1:
                     delays.append(delay)
                 hub.sleep(1)
             mean_delay = float(sum(delays) / len(delays))
+
             tx2, rx2 = self.get_path_stats(INGRESS_NODE, enode)
-            loss = self.calculate_loss(tx1,rx1,tx2,rx2)
+            loss = self.calculate_loss(tx1,rx1,tx2,rx2) #loss calculating
             self.logger.info("DELAY: " + str(mean_delay))
             self.logger.info("LOSS: " + str(loss))
             reward = self.calculate_reward(loss, mean_delay)
             self.logger.info(reward)
             action_list[i].update(reward)
 
+        # Calculate and write results:
         with open('funet-light-reward.txt', 'a') as f:
             f.write('----------------Funet-Light-Network-------------------------- \n')
         round = 1
+
+        # MAB model is used to decide egress point overtime:
         while True:
             self.logger.info("*************************ROUND" + str(round) + "*****************")
             time_start = time.time()
             total_reward = []
+
+            #Each round the mab_model is triggered to choose a egress points 20 times
             for timestep in xrange(20):
-                enode = mab_model.choose_action()
+                enode = mab_model.choose_action() #choose "new" egress node
                 dpid = enode.id
                 self.change_egress_node(dpid)
                 hub.sleep(2)
+
+                #Calculating statistics of the path:
                 tx1, rx1 = self.get_path_stats(INGRESS_NODE, dpid)
                 delays = []
                 for j in xrange(20):
@@ -117,30 +141,32 @@ class enode_select(app_manager.RyuApp):
                 self.logger.info("LOSS: " + str(loss))
                 self.logger.info("DELAY: " + str(mean_delay))
                 reward = self.calculate_reward(loss, mean_delay)
-                enode.update(reward)
+                enode.update(reward) #Update reward to the responding action
                 total_reward.append(reward)
                 self.logger.info("REWARD: " + str(reward))
 
+            #mean reward of a round:
             mean_reward = float(sum(total_reward) / len(total_reward))
             with open('funet-light-reward.txt', 'a') as f:
                 f.write(str(mean_reward) + '\n')
             self.logger.info("Loop finished in " + str(time.time() - time_start) +"s")
             round += 1
-            # Stop for 
+            # Stop after 12 rounds
             if round == 13:
                 with open('funet-light-reward.txt', 'a') as f:
                     f.write(str(mab_model.actions) + '\n')
                 break
     
+    #triggered when a new egress_node is chosen (new path for the outbound traffic):
     def change_egress_node(self, new_enode_dpid):
         self.logger.info("******** Change egressnode to switch: dpid: " + str(new_enode_dpid))
         if new_enode_dpid == self.current_egressnode:
             return
         if self.current_egressnode != 0:
-            self.delete_path(INGRESS_NODE,self.current_egressnode)
+            self.delete_path(INGRESS_NODE,self.current_egressnode) #delete old path for the outbound traffic
         hub.sleep(0.5)
         self.current_egressnode = new_enode_dpid
-        self.install_path(INGRESS_NODE, new_enode_dpid)
+        self.install_path(INGRESS_NODE, new_enode_dpid) # install new path
     
     # Install external path from src switch to dst switch
     def install_path(self, src, dst):
@@ -148,7 +174,7 @@ class enode_select(app_manager.RyuApp):
             self.logger.info("!!!!WARNING: NOT RIGHT PATH INSTALL FUNCTION")
             return
         path = self.routing_table[src][dst]
-        ports = []
+        ports = [] #outport for each switch in the path
         for s1, s2 in zip(path[:-1], path[1:]):
             ports.append(self.adjacency[s1][s2])
         ports.append(1)
@@ -222,14 +248,15 @@ class enode_select(app_manager.RyuApp):
         loss = (1.0 - float(rx_diff) / tx_diff) if tx_diff > 0 else 0
         return max(0,loss)
 
+    # Calculate delay between switch src to switch dst (theriotically reported in the paper)
     def calculate_link_delay(self, src, dst):
         eth_src = ETH_ADD_PREFIX + str(src)
         eth_dst = ETH_ADD_PREFIX + str(dst)
-        pkt = DelayPacket.delay_packet(eth_src,eth_dst)
-        self.install_delay_path(src, dst)
-        self.delay_status[src][dst] = 0
-        path = self.routing_table[src][dst]
-        out_port = self.adjacency[src][path[1]]
+        pkt = DelayPacket.delay_packet(eth_src,eth_dst) #craft delay-calculating packet
+        self.install_delay_path(src, dst) #install path for the delay-calculating packet
+        self.delay_status[src][dst] = 0 
+        path = self.routing_table[src][dst] #get path from src to dst
+        out_port = self.adjacency[src][path[1]] #get the out port for the packet
 
         dp = self.datapaths[src]
         ofproto = dp.ofproto
@@ -242,8 +269,10 @@ class enode_select(app_manager.RyuApp):
         )
         hub.sleep(0.5)
         self.delay_start_time[src][dst] = Decimal(time.time())
-        dp.send_msg(msg)
+        dp.send_msg(msg) #send delay packet
         hub.sleep(1)
+
+        #for the case when the delay packet is lost in transferring
         if not self.delay_status[src][dst]:
             self.delay_status[src][dst] = 1
             return -1
@@ -255,7 +284,7 @@ class enode_select(app_manager.RyuApp):
     # Install delay packet forwarding in a specific path    
     def install_delay_path(self, src, dst):
         path = self.routing_table[src][dst]        
-        ports = []
+        ports = [] #outport for each switch in the path
         for s1, s2 in zip(path[:-1], path[1:]):
             ports.append(self.adjacency[s1][s2])
         ports.append(1)
@@ -268,13 +297,13 @@ class enode_select(app_manager.RyuApp):
                 dp = self.datapaths[switch]
                 ofp = dp.ofproto
                 ofp_parser = dp.ofproto_parser
-                if dst < 10:
+                if dst < 10: #For virtual machine # 1-9
                     match = ofp_parser.OFPMatch(
                         eth_type = DelayPacket.DELAY_ETH_TYPE, 
                         eth_src = ETH_ADD_PREFIX + '0' + str(src), 
                         eth_dst = ETH_ADD_PREFIX + '0' + str(dst)
                     )
-                else:
+                else: #For virtual machine # 10-99
                     match = ofp_parser.OFPMatch(
                         eth_type = DelayPacket.DELAY_ETH_TYPE, 
                         eth_src = ETH_ADD_PREFIX + str(src), 
@@ -296,6 +325,7 @@ class enode_select(app_manager.RyuApp):
         actions = [ofp_parser.OFPActionOutput(ofp.OFPP_CONTROLLER)]
         self.add_flow(delay_dst_sw, 1, match, actions)
     
+    #Delete rule for delay-calculating packet (used after finish calculating delay)
     def delete_delay_path(self, src, dst):
         path = self.routing_table[src][dst]
         for i in range(len(path)):
@@ -310,6 +340,7 @@ class enode_select(app_manager.RyuApp):
                 )
                 self.delete_flow(dp, match)
     
+    #Delete a flow with a match in a SDN switch
     def delete_flow(self, datapath, match):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -319,6 +350,7 @@ class enode_select(app_manager.RyuApp):
                                 out_port = ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY)
         datapath.send_msg(msg)
 
+    #Add a flow to in a SDN switch
     def add_flow(self, datapath, priority, match, actions):
         # print "Adding flow ", match, actions
         ofproto = datapath.ofproto
@@ -331,7 +363,7 @@ class enode_select(app_manager.RyuApp):
                                 match=match, instructions=inst)
         datapath.send_msg(mod)
 
-    # Handle delay packet
+    # Handle delay packet sent to controller from a switch
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev): 
         rx_time = Decimal(time.time())
@@ -339,6 +371,7 @@ class enode_select(app_manager.RyuApp):
         pkt = packet.Packet(data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
+        #check if the packet is the crafted delay-calculating packet
         if eth.ethertype != DelayPacket.DELAY_ETH_TYPE:
             return
         
@@ -367,6 +400,7 @@ class enode_select(app_manager.RyuApp):
                     stack.append((next, path + [next]))
         return paths
     
+    #Get the shortest path from src switch to dst switch
     def get_optimal_path(self, src, dst):
         paths = self.get_paths(src, dst)
         if not paths:
@@ -379,6 +413,7 @@ class enode_select(app_manager.RyuApp):
                 min = len(path)
         return optimal_path
 
+    #Calculate routing table containing
     def calculate_routing_table(self):
         start_time = time.time()
         for i in range(0,len(self.switches) - 1):
@@ -391,6 +426,7 @@ class enode_select(app_manager.RyuApp):
         elapsed_time = time.time() - start_time
         self.logger.info('*****Routing table calculating time:' + str(elapsed_time))
 
+    #Send flowStats request to a switch
     def request_stats(self, dpid, match):
         dp = self.datapaths[dpid]
         parser = dp.ofproto_parser
@@ -398,6 +434,7 @@ class enode_select(app_manager.RyuApp):
         msg = parser.OFPFlowStatsRequest(dp,match = match)
         dp.send_msg(msg)
 
+    #Handle port statistics reply
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def handle_port_stat_reply(self, ev):
         msg = ev.msg
@@ -413,6 +450,7 @@ class enode_select(app_manager.RyuApp):
             if dp.id == dst_dpid:
                 self.rx_flow_stats[src_dpid][dst_dpid] = stat.packet_count
         
+    #Handle a switch enter or leave network
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
     def switch_stat_change_handler(self, ev):
         datapath = ev.datapath
@@ -427,6 +465,7 @@ class enode_select(app_manager.RyuApp):
                 del self.datapaths[datapath.id]
                 self.switches.remove(datapath)
 
+    #Handle event a link added to the network topology
     @set_ev_cls(event.EventLinkAdd, MAIN_DISPATCHER)
     def link_add_handler(self, ev):
         s1 = ev.link.src
@@ -434,6 +473,7 @@ class enode_select(app_manager.RyuApp):
         self.adjacency[s1.dpid][s2.dpid] = s1.port_no
         self.adjacency[s2.dpid][s1.dpid] = s2.port_no
 
+    #Handle event a link deleted from the network topology
     @set_ev_cls(event.EventLinkDelete, MAIN_DISPATCHER)
     def link_delete_handler(self, ev):
         s1 = ev.link.src
@@ -447,7 +487,7 @@ class enode_select(app_manager.RyuApp):
 
 # Customized packet used to calculating delay
 class DelayPacket(object):
-    DELAY_ETH_TYPE = 0x7777
+    DELAY_ETH_TYPE = 0x7777 #Special ethernet type used only for delay-calculating packet
 
     @staticmethod
     def delay_packet(eth_src, eth_dst, payload = ''):

@@ -1,6 +1,6 @@
 # This is a basic routing application used in the article:
 #  "A Reinforcement Learning-Based Solution for Intra-Domain Egress Selection" 
-#  Authors: Duc-Huy LE, Hai Anh TRAN
+#  Authors: Duc-Huy LE, Hai Anh TRAN, Sami SOUIHI
 #  Conference: HPSR2021
 
 # This application monitor collects topology information, calculates and preinstalls
@@ -28,11 +28,11 @@ class simple_routing(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(simple_routing, self).__init__(*args, **kwargs)
         self.topology_api_app = self
-        self.routing_thread = hub.spawn(self.main_routing)
-        self.datapaths = {}
-        self.switches = []
-        self.adjacency = defaultdict(dict)
-        self.routing_table = defaultdict(dict)
+        self.routing_thread = hub.spawn(self.main_routing) #main component at line #37
+        self.datapaths = {} #list of IDs or DATAPATHs of switches in the network
+        self.switches = [] #list of switch ENTITIES
+        self.adjacency = defaultdict(dict) # self.adjacency[s1][s2] = port of switch s1 that links to switch s2
+        self.routing_table = defaultdict(dict) #self.routing_table[s1][s2] contains switchs in the shortest path from s1 to s2
     
     # Main thread
     def main_routing(self):
@@ -90,13 +90,11 @@ class simple_routing(app_manager.RyuApp):
                 self.routing_table[src][dst] = path
                 self.routing_table[dst][src] = path[::-1]
         elapsed_time = time.time() - start_time
-        # self.logger.info('*****Routing table calculating time:' + str(elapsed_time))
-        # self.logger.info(self.routing_table)
     
     # install routing rules in defined path between src and dst switch
     def install_path(self, src, dst):
         path = self.routing_table[src][dst]
-        ports = []
+        ports = [] #outport for each switch in the path
         for s1, s2 in zip(path[:-1], path[1:]):
             ports.append(self.adjacency[s1][s2])
         ports.append(1)
