@@ -9,32 +9,47 @@ In this project, we provide:
 # Dependencies
 
 ## Ryu controller
-We use [Ryu](https://ryu-sdn.org) to deploy our SDN application. Ryu can work in any OS Environment that support python 2 (Our application and experiements are performed in Ubuntu 18.04). You can install ryu using pip:
+We use [Ryu](https://ryu-sdn.org) to deploy our SDN application. Ryu can work in any OS Environment (Our application and experiements are performed in Ubuntu 18.04). You can install ryu following this tutorial: https://ryu.readthedocs.io/en/latest/getting_started.html
+
+We recommend to simply install Ryu in Ubuntu as follows.
 
 ```bash
-% pip install ryu
+% sudo apt -y install python3-ryu
 ```
-or building from source code as follows:
+or 
 ```bash
-% git clone git://github.com/osrg/ryu.git 
-% cd ryu; python ./setup.py install 
+% sudo apt -y install python-ryu
 ```
+If you want to run ryu with Python2.
 
 ## Mininet
-To simulate an SDN network, we use the popular framework [Mininet](http://mininet.org/). Mininet currenttly only works in Linux. In our project, we run mininet in an Ubuntu LTS 18.04 VM. To get mininet, you can simply download a compressed Mininet VM from [Mininet downloadpage](https://github.com/mininet/mininet/wiki/Mininet-VM-Images) or install through apt:
+UPDATE: Mininet now supports Python3.
+
+To simulate an SDN network, we use the popular framework [Mininet](http://mininet.org/). Mininet currenttly only works in Linux. In our project, we run mininet in an Ubuntu LTS 18.04 VM. To get mininet, you can simply download a compressed Mininet VM from [Mininet downloadpage](https://github.com/mininet/mininet/wiki/Mininet-VM-Images) or with following commands:
 
 ```bash
 sudo apt update
-sudo apt install mininet
+sudo apt -y install mininet
 ```
 
-or install natively from source:
+Or install natively from source:
 ```bash
-git clone git://github.com/mininet/mininet
+git clone https://github.com/mininet/mininet
 cd mininet
 git tag  # list available versions
-git checkout -b cs244-spring-2012-final  # or whatever version you wish to install
-util/install.sh -a
+git checkout -b 2.3.0  # or whatever version you wish to install
+sudo PYTHON=python3 mininet/util/install.sh -n   # install Python 3 Mininet
+```
+Change the last line to 
+```bash
+sudo PYTHON=python2 mininet/util/install.sh -n   # install Python 2 Mininet
+```
+if you want to run mininet in Python 2
+
+## Python package
+We need numpy for our MAB algorithm deployment
+```bash
+% pip install 
 ```
 
 ## Testbed auxiliary components
@@ -53,16 +68,6 @@ For the Multi-Armed Bandit problem, we used four algorthims ($\epsilon$-greedy, 
 6. exp-results: our results that recorded by the *enode_select.py* app above
 
 # Testbed deployment
-
-## Ryu applications
-
-We used following command to run the applications:
-
-```bash
-ryu-manager --observe-links routing.py enode_select.py
-```
-
-Option **observe-links** enables network discovery mode, which requires the controller to periodically send LLDP packets to every port of every switches and hence help it frequently update network topology information (e.g. a new switch connects).
 
 ## Network simulation
 We use two network topology for the tasks, which is illustrated as follows:
@@ -84,7 +89,19 @@ python funet.py
 ```
 depending on which topology we wanted to experiment.
 
-After running the script, the topology will be created and we could manually access to the hosts in the network via mininet CLI to replay network activities using **tcpreplay** in each host. Additionally, this process could be automated by adding command to each host in the python script of each network. When the network is created, in the host machine of mininet, there are multiple virtual network interfaces created corresponding to each port of hosts and switches in the network. Therefore, to simulate delay and loss in particular links, we use **netem** to cause loss and delay to their interfaces in the host machine. To initiate netem in an interface, we might used
+## Ryu applications
+
+We used following command to run the applications:
+
+```bash
+ryu-manager --observe-links routing.py enode_select.py
+```
+
+Option **observe-links** enables network discovery mode, which requires the controller to periodically send LLDP packets to every port of every switches and hence help it frequently update network topology information (e.g. a new switch connects).
+
+## Experiments
+
+After running the scripts, the topology will be created and we could manually access to the hosts in the network via mininet CLI to replay network activities using **tcpreplay** in each host. Additionally, this process could be automated by adding command to each host in the python script of each network. When the network is created, in the host machine of mininet, there are multiple virtual network interfaces created corresponding to each port of hosts and switches in the network. Therefore, to simulate delay and loss in particular links, we use **netem** to cause loss and delay to their interfaces in the host machine. To initiate netem in an interface, we might used
 ```bash
 sudo tc qdisc add dev sw1-eth2 root netem loss 2% delay 10ms 2ms 25%
 ```
@@ -102,6 +119,13 @@ sudo tc qdisc del dev sw1-eth2 root
 ```
 
 With these commands, we were able to create scripts to automate our network changes overtime. More usage of netem could be found at its [man page](https://man7.org/linux/man-pages/man8/tc-netem.8.html).
+
+
+NOTE: After you finish an experiment, you should fully clean up mininet environment, including removing all virtual network interfaces created by mininet, by running:
+
+```bash
+sudo mn -c
+```
 
 # Experimental result
 
