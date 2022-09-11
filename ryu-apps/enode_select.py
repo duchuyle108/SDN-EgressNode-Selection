@@ -94,7 +94,7 @@ class enode_select(app_manager.RyuApp):
 
             #delay calculating
             delays = []
-            for j in xrange(10): #delay is calculated 10 times in a session
+            for j in range(10): #delay is calculated 10 times in a session
                 delay = self.calculate_link_delay(INGRESS_NODE, enode)
                 if delay != -1:
                     delays.append(delay)
@@ -121,7 +121,7 @@ class enode_select(app_manager.RyuApp):
             total_reward = []
 
             #Each round the mab_model is triggered to choose a egress points 20 times
-            for timestep in xrange(20):
+            for timestep in range(20):
                 enode = mab_model.choose_action() #choose "new" egress node
                 dpid = enode.id
                 self.change_egress_node(dpid)
@@ -130,7 +130,7 @@ class enode_select(app_manager.RyuApp):
                 #Calculating statistics of the path:
                 tx1, rx1 = self.get_path_stats(INGRESS_NODE, dpid)
                 delays = []
-                for j in xrange(20):
+                for j in range(20):
                     delay = self.calculate_link_delay(INGRESS_NODE, dpid)
                     if delay != -1:
                         delays.append(delay)

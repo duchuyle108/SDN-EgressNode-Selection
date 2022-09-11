@@ -19,11 +19,11 @@ def bso():
     for i in range(1, node_num + 1):
         net.addHost('h%d' %i, ip = '10.0.0.%d' %i)
 
-    print "*** Creating host-switch links"
+    print("*** Creating host-switch links")
     for i in range(1, node_num + 1):
         net.addLink('h%d'%i, 's%d' %i, bw=100)
 
-    print "*** Creating switch-switch links"
+    print("*** Creating switch-switch links")
     link_from = [1,2,2,2,2,2,3,3,5,7,8,8,9,9,10,11,12,13]
     link_to =   [2,3,4,5,7,8,4,5,6,9,9,12,10,13,11,13,13,14]
 
